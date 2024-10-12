@@ -1,0 +1,737 @@
+# -*- coding: utf-8 -*-
+
+# Importação de bibliotecas
+import pandas as pd
+from tabulate import tabulate
+import os
+import random
+import requests  # Para integrar com APIs (ex.: Climatempo)
+import json
+
+# Menu de Navegação
+home = """
+    ╔═══════╣ FarmCalculator ╠═══════╗
+    ║                                ║
+    ║    1 -> Entrada de dados       ║
+    ║    2 -> Saída de dados         ║
+    ║    3 -> Atualizar dados        ║
+    ║    4 -> Deletar dados          ║
+    ║    5 -> Estatísticas           ║
+    ║    6 -> Clima                  ║
+    ║    7 -> Gerar script R         ║
+    ║    8 -> Sair                   ║
+    ║                                ║
+    ╚════════════════════════════════╝
+"""
+
+# Verifica se o arquivo 'clima.csv' existe
+if os.path.exists('clima.csv'):
+    clima = pd.read_csv('clima.csv', sep=",")
+else:
+    # Se não existir, cria um DataFrame vazio com as colunas necessárias
+    clima = pd.DataFrame(columns=[
+        "cidade", "uf", "pais", "data", "temperatura", "umidade",
+        "condicao", "sensacao_termica", "vento_velocidade", "vento_direcao", "pressao"
+    ])
+    clima.to_csv('clima.csv', sep=',', index=False)
+
+# Verifica se o arquivo 'dados.csv' existe
+if os.path.exists('dados.csv'):
+    dados = pd.read_csv('dados.csv', sep=",")
+else:
+    # Se não existir, cria um DataFrame vazio com as colunas necessárias
+    dados = pd.DataFrame(columns=[
+        "id", "cultura", "largura", "comprimento", "area", "area_plantio",
+        "fileiras", "plantas_por_fileira", "total_plantas",
+        "insumo_nome", "insumo_total", "tempo_plantio",
+        "espacamento_fileira_cm", "espacamento_planta_cm",
+        "largura_da_fileira_cm", "comprimento_da_planta_cm",
+        "umidade_solo", "temperatura", "necessidade_irrigacao",
+        "nivel_investimento", "num_tecnologias", "produtividade_esperada",
+        "custo_agua", "tempo_irrigacao", "numero_postes"
+    ])
+    dados.to_csv('dados.csv', sep=',', index=False)
+
+# Verifica se o arquivo 'estatisticas.csv' existe
+if os.path.exists('estatisticas.csv'):
+    estatisticas = pd.read_csv('estatisticas.csv', sep=",")
+else:
+    # Se não existir, cria um DataFrame vazio com as colunas necessárias
+    estatisticas = pd.DataFrame(columns=[
+        "Cultura", "Métrica", "Valor"
+    ])
+    estatisticas.to_csv('estatisticas.csv', sep=',', index=False)
+
+# Função para calcular a área total
+def calcular_area(largura, comprimento):
+    return largura * comprimento
+
+# Função para obter os parâmetros padrão com base na cultura
+def obter_parametros_cultura(cultura):
+    if cultura.lower() == "alface":
+        espacamento_fileira_cm = 30
+        espacamento_planta_cm = 20
+        largura_da_fileira_cm = 20
+        comprimento_da_planta_cm = 20
+        necessidade_hidrica = 25  # Umidade mínima em %
+    elif cultura.lower() == "tomate":
+        espacamento_fileira_cm = 100
+        espacamento_planta_cm = 50
+        largura_da_fileira_cm = 50
+        comprimento_da_planta_cm = 50
+        necessidade_hidrica = 30
+    elif cultura.lower() == "soja":
+        espacamento_fileira_cm = 50
+        espacamento_planta_cm = 5
+        largura_da_fileira_cm = 10
+        comprimento_da_planta_cm = 10
+        necessidade_hidrica = 20
+    elif cultura.lower() == "milho":
+        espacamento_fileira_cm = 80
+        espacamento_planta_cm = 20
+        largura_da_fileira_cm = 20
+        comprimento_da_planta_cm = 20
+        necessidade_hidrica = 25
+    elif cultura.lower() == "café":
+        espacamento_fileira_cm = 200
+        espacamento_planta_cm = 100
+        largura_da_fileira_cm = 100
+        comprimento_da_planta_cm = 100
+        necessidade_hidrica = 35
+    elif cultura.lower() == "algodão":
+        espacamento_fileira_cm = 76
+        espacamento_planta_cm = 25
+        largura_da_fileira_cm = 25
+        comprimento_da_planta_cm = 25
+        necessidade_hidrica = 30
+    elif cultura.lower() == "trigo":
+        espacamento_fileira_cm = 20
+        espacamento_planta_cm = 5
+        largura_da_fileira_cm = 5
+        comprimento_da_planta_cm = 5
+        necessidade_hidrica = 18
+    else:
+        print("Cultura não suportada.")
+        return None
+    return {
+        "espacamento_fileira_cm": espacamento_fileira_cm,
+        "espacamento_planta_cm": espacamento_planta_cm,
+        "largura_da_fileira_cm": largura_da_fileira_cm,
+        "comprimento_da_planta_cm": comprimento_da_planta_cm,
+        "necessidade_hidrica": necessidade_hidrica
+    }
+
+# Função para gerar dados de sensores (umidade do solo e temperatura)
+def gerar_dados_sensores():
+    umidade_solo = random.uniform(10, 40)  # Umidade do solo em %
+    temperatura = random.uniform(20, 35)   # Temperatura em °C
+    return umidade_solo, temperatura
+
+# Função para calcular a necessidade de irrigação
+def calcular_necessidade_irrigacao(umidade_solo, necessidade_hidrica):
+    if umidade_solo < necessidade_hidrica:
+        return "Sim"
+    else:
+        return "Não"
+
+# Função para calcular o número de fileiras
+def calcular_fileiras(largura, espacamento_fileira_m, largura_da_fileira_m):
+    espaco_total_por_fileira = largura_da_fileira_m + espacamento_fileira_m
+    num_espacamentos = int((largura - largura_da_fileira_m) / espaco_total_por_fileira)
+    num_fileiras = num_espacamentos + 1
+    return num_fileiras
+
+# Função para calcular o número de plantas por fileira
+def calcular_plantas_por_fileira(comprimento, espacamento_planta_m, comprimento_da_planta_m):
+    espaco_total_por_planta = comprimento_da_planta_m + espacamento_planta_m
+    num_espacamentos = int((comprimento - comprimento_da_planta_m) / espaco_total_por_planta)
+    num_plantas = num_espacamentos + 1
+    return num_plantas
+
+# Função para calcular a área de plantio
+def calcular_area_plantio(fileiras, plantas_por_fileira, largura_da_fileira_m, comprimento_da_planta_m, espacamento_fileira_m, espacamento_planta_m):
+    comprimento_total_fileira = plantas_por_fileira * comprimento_da_planta_m + (plantas_por_fileira - 1) * espacamento_planta_m
+    largura_total_fileiras = fileiras * largura_da_fileira_m + (fileiras - 1) * espacamento_fileira_m
+    area_plantio = largura_total_fileiras * comprimento_total_fileira
+    return area_plantio
+
+# Função para calcular o manejo de insumos
+def calcular_insumos(area_plantio, cultura):
+    if cultura.lower() == "alface":
+        insumo_nome = "Cama de aviário"
+        insumo_por_m2 = 3  # kg por m² para alface
+    elif cultura.lower() == "tomate":
+        insumo_nome = "Pesticida"
+        insumo_por_m2 = 0.5  # litros por m² para tomate
+    else:
+        insumo_nome = "Fertilizante"
+        insumo_por_m2 = 1  # kg por m² para outras culturas
+    insumo_total = area_plantio * insumo_por_m2
+    return insumo_nome, insumo_total
+
+# Função para calcular o tempo de plantio com base na cultura
+def calcular_tempo(cultura):
+    if cultura.lower() == "alface":
+        return 30  # 30 dias
+    elif cultura.lower() == "tomate":
+        return 90  # 90 dias
+    elif cultura.lower() == "soja":
+        return 120
+    elif cultura.lower() == "milho":
+        return 100
+    elif cultura.lower() == "café":
+        return 365
+    elif cultura.lower() == "algodão":
+        return 150
+    elif cultura.lower() == "trigo":
+        return 110
+    else:
+        print("Cultura não suportada.")
+        return None
+
+# Função para obter uma opção válida do menu
+def obter_opcao_menu():
+    while True:
+        opcao = input("Escolha uma opção: ")
+        if opcao.isdigit() and 1 <= int(opcao) <= 8:
+            return int(opcao)
+        else:
+            print("Opção inválida. Por favor, insira um número entre 1 e 8.")
+
+# Função voltar ao menu
+def voltar_menu():
+    while True:
+        opcao = input("\nDigite 0 para voltar ao menu principal: ")
+        if opcao.isdigit() and int(opcao) == 0:
+            return int(opcao)
+
+# Função para obter um número válido (float)
+def obter_numero(mensagem):
+    while True:
+        valor = input(mensagem)
+        try:
+            numero = float(valor)
+            if numero > 0:
+                return numero
+            else:
+                print("Por favor, insira um número maior que zero.")
+        except ValueError:
+            print("Entrada inválida. Por favor, insira um número válido.")
+
+# Função para obter um número inteiro válido
+def obter_inteiro(mensagem):
+    while True:
+        valor = input(mensagem)
+        if valor.isdigit():
+            return int(valor)
+        else:
+            print("Entrada inválida. Por favor, insira um número inteiro válido.")
+
+# Função para obter a cultura válida
+def obter_cultura():
+    culturas_disponiveis = ['alface', 'tomate', 'soja', 'milho', 'café', 'algodão', 'trigo']
+    while True:
+        cultura = input("Digite o tipo de cultura (Alface/Tomate/Soja/Milho/Café/Algodão/Trigo): ").strip().lower()
+        if cultura in culturas_disponiveis:
+            return cultura.capitalize()
+        else:
+            print(f"Opção inválida. Por favor, escolha entre {', '.join(culturas_disponiveis)}.")
+
+# Função para obter o nível de investimento
+def obter_nivel_investimento():
+    niveis = ['Baixo', 'Médio', 'Alto']
+    while True:
+        nivel = input("Digite o nível de investimento em tecnologia (Baixo/Médio/Alto): ").strip().capitalize()
+        if nivel in niveis:
+            return nivel
+        else:
+            print("Opção inválida. Por favor, escolha entre 'Baixo', 'Médio' ou 'Alto'.")
+
+# Função para definir o número de tecnologias com base no nível de investimento
+def definir_num_tecnologias(nivel_investimento):
+    if nivel_investimento == 'Baixo':
+        return random.randint(1, 2)
+    elif nivel_investimento == 'Médio':
+        return random.randint(3, 4)
+    elif nivel_investimento == 'Alto':
+        return random.randint(5, 6)
+
+# Função para calcular a produtividade esperada
+def calcular_produtividade_esperada(cultura, nivel_investimento, area_plantio):
+    fator_produtividade = {
+        'Baixo': 0.8,
+        'Médio': 1.0,
+        'Alto': 1.2
+    }
+    produtividade_base = {
+        'Alface': 2000,  # kg por hectare
+        'Tomate': 3000,
+        'Soja': 2800,
+        'Milho': 5000,
+        'Café': 1500,
+        'Algodão': 1800,
+        'Trigo': 2500
+    }
+    produtividade = produtividade_base[cultura] * fator_produtividade[nivel_investimento] * (area_plantio / 10000)  # Convertendo m² para hectares
+    return produtividade
+
+# Função para calcular o custo de água
+def calcular_custo_agua(volume_agua, preco_por_m3):
+    return volume_agua * preco_por_m3
+
+# Função para calcular o tempo de irrigação
+def calcular_tempo_irrigacao(volume_agua, vazao_sistema):
+    return volume_agua / vazao_sistema
+
+# Função para calcular o número de postes de irrigação
+def calcular_numero_postes(area, cobertura_por_posto):
+    return int(area / cobertura_por_posto) + 1
+
+# Função para formatar os nomes das colunas
+def formatar_colunas(colunas):
+    colunas_formatadas = []
+    for coluna in colunas:
+        coluna = coluna.replace('_', ' ').title()
+        colunas_formatadas.append(coluna)
+    return colunas_formatadas
+
+# Função para obter dados climáticos (simulados)
+def obter_dados_climaticos():
+    # Aqui você pode integrar com uma API real ou simular os dados
+    temperatura = random.uniform(15, 35)  # Temperatura em °C
+    umidade = random.uniform(30, 90)      # Umidade em %
+    return temperatura, umidade
+
+# Menu principal
+def menu():
+    global dados  # Para permitir atualização do DataFrame dentro da função
+
+    while True:
+        print(home)
+        opcao = obter_opcao_menu()  # Usando a função de validação
+
+        if opcao == 1:
+            # Entrada de novos dados
+            cultura = obter_cultura()
+            largura = obter_numero("Digite a largura do campo em metros: ")
+            comprimento = obter_numero("Digite o comprimento do campo em metros: ")
+
+            # Obter parâmetros padrão com base na cultura
+            parametros = obter_parametros_cultura(cultura)
+            if parametros is None:
+                continue  # Se a cultura não for suportada, retorna ao menu
+
+            espacamento_fileira_cm = parametros["espacamento_fileira_cm"]
+            espacamento_planta_cm = parametros["espacamento_planta_cm"]
+            largura_da_fileira_cm = parametros["largura_da_fileira_cm"]
+            comprimento_da_planta_cm = parametros["comprimento_da_planta_cm"]
+            necessidade_hidrica = parametros["necessidade_hidrica"]
+
+            # Converter centímetros para metros
+            espacamento_fileira_m = espacamento_fileira_cm / 100
+            espacamento_planta_m = espacamento_planta_cm / 100
+            largura_da_fileira_m = largura_da_fileira_cm / 100
+            comprimento_da_planta_m = comprimento_da_planta_cm / 100
+
+            area = calcular_area(largura, comprimento)
+
+            fileiras = calcular_fileiras(largura, espacamento_fileira_m, largura_da_fileira_m)
+            plantas_por_fileira = calcular_plantas_por_fileira(comprimento, espacamento_planta_m, comprimento_da_planta_m)
+            total_plantas = fileiras * plantas_por_fileira
+
+            area_plantio = calcular_area_plantio(
+                fileiras,
+                plantas_por_fileira,
+                largura_da_fileira_m,
+                comprimento_da_planta_m,
+                espacamento_fileira_m,
+                espacamento_planta_m
+            )
+
+            insumo_nome, insumo_total = calcular_insumos(area_plantio, cultura)
+            tempo_plantio = calcular_tempo(cultura)
+
+            # Gerar dados de sensores
+            umidade_solo, temperatura = gerar_dados_sensores()
+
+            # Calcular necessidade de irrigação
+            necessidade_irrigacao = calcular_necessidade_irrigacao(umidade_solo, necessidade_hidrica)
+
+            # Obter nível de investimento
+            nivel_investimento = obter_nivel_investimento()
+
+            # Definir número de tecnologias
+            num_tecnologias = definir_num_tecnologias(nivel_investimento)
+
+            # Calcular produtividade esperada
+            produtividade_esperada = calcular_produtividade_esperada(cultura, nivel_investimento, area_plantio)
+
+            # Cálculos adicionais
+            # Suposições para os cálculos
+            volume_agua = area_plantio * 0.005  # Volume de água necessário (m³)
+            preco_por_m3 = 2.5  # Preço por m³ de água
+            vazao_sistema = 10  # Vazão do sistema de irrigação (m³/h)
+            cobertura_por_posto = 200  # Área coberta por cada posto de irrigação (m²)
+
+            custo_agua = calcular_custo_agua(volume_agua, preco_por_m3)
+            tempo_irrigacao = calcular_tempo_irrigacao(volume_agua, vazao_sistema)
+            numero_postes = calcular_numero_postes(area_plantio, cobertura_por_posto)
+
+            if area and fileiras and plantas_por_fileira and insumo_total is not None and tempo_plantio:
+                nova_linha = {
+                    "id": [len(dados) + 1],
+                    "cultura": [cultura],
+                    "largura": [largura],
+                    "comprimento": [comprimento],
+                    "area": [area],
+                    "area_plantio": [area_plantio],
+                    "fileiras": [fileiras],
+                    "plantas_por_fileira": [plantas_por_fileira],
+                    "total_plantas": [total_plantas],
+                    "insumo_nome": [insumo_nome],
+                    "insumo_total": [insumo_total],
+                    "tempo_plantio": [tempo_plantio],
+                    "espacamento_fileira_cm": [espacamento_fileira_cm],
+                    "espacamento_planta_cm": [espacamento_planta_cm],
+                    "largura_da_fileira_cm": [largura_da_fileira_cm],
+                    "comprimento_da_planta_cm": [comprimento_da_planta_cm],
+                    "umidade_solo": [umidade_solo],
+                    "temperatura": [temperatura],
+                    "necessidade_irrigacao": [necessidade_irrigacao],
+                    "nivel_investimento": [nivel_investimento],
+                    "num_tecnologias": [num_tecnologias],
+                    "produtividade_esperada": [produtividade_esperada],
+                    "custo_agua": [custo_agua],
+                    "tempo_irrigacao": [tempo_irrigacao],
+                    "numero_postes": [numero_postes]
+                }
+                nova_linha_df = pd.DataFrame(nova_linha)
+                dados = pd.concat([dados, nova_linha_df], ignore_index=True)
+
+                # Salvando dados após a inserção
+                dados.to_csv('dados.csv', sep=',', index=False)
+
+                print(f"\nDados inseridos para {cultura}:\n"
+                      f"  Área Total: {area:.2f} m²\n"
+                      f"  Área de Plantio: {area_plantio:.2f} m²\n"
+                      f"  Fileiras: {fileiras}\n"
+                      f"  Plantas por Fileira: {plantas_por_fileira}\n"
+                      f"  Total de Plantas: {total_plantas}\n"
+                      f"  Insumo Utilizado: {insumo_nome}\n"
+                      f"  Insumo Total Necessário: {insumo_total:.2f} unidades\n"
+                      f"  Tempo de Plantio: {tempo_plantio} dias\n"
+                      f"  Necessidade de Irrigação: {necessidade_irrigacao}\n"
+                      f"  Nível de Investimento: {nivel_investimento}\n"
+                      f"  Número de Tecnologias: {num_tecnologias}\n"
+                      f"  Produtividade Esperada: {produtividade_esperada:.2f} kg\n"
+                      f"  Custo de Água: R$ {custo_agua:.2f}\n"
+                      f"  Tempo de Irrigação: {tempo_irrigacao:.2f} horas\n"
+                      f"  Número de Postes de Irrigação: {numero_postes}")
+                voltar_menu()
+            else:
+                print("Erro ao calcular os dados. Verifique as entradas.")
+
+        elif opcao == 2:
+            # Exibição de dados
+            if dados.empty:
+                print("Nenhum dado disponível.")
+                voltar_menu()
+            else:
+                print("\nEscolha o formato de exibição:")
+                print("1 - Lista")
+                print("2 - Tabela")
+                while True:
+                    sub_opcao = input("Opção: ")
+                    if sub_opcao == '1':
+                        # Exibição em formato de lista
+                        for index, linha in dados.iterrows():
+                            print(f"\nID {linha['id']}:")
+                            for coluna in dados.columns[1:]:
+                                print(f"  {coluna.replace('_', ' ').title()}: {linha[coluna]}")
+                        voltar_menu()
+                        break
+                    elif sub_opcao == '2':
+                        # Exibição em formato de tabela com colunas formatadas
+                        dados_formatados = dados.copy()
+                        dados_formatados.columns = formatar_colunas(dados.columns)
+                        print("\nDados em formato de tabela:\n")
+                        print(dados_formatados.to_string(index=False))
+                        voltar_menu()
+                        break
+                    else:
+                        print("Opção inválida. Por favor, escolha '1' ou '2'.")
+
+        elif opcao == 3:
+            # Atualizar dados
+            if dados.empty:
+                print("Nenhum dado disponível para atualizar.")
+                voltar_menu()
+                continue
+
+            print(f'Selecione entre 1 e {len(dados)}')
+            index = obter_inteiro("Digite o número da cultura que deseja atualizar: ") - 1
+            if 0 <= index < len(dados):
+                # Obter os valores antigos
+                old_largura = dados.loc[index, "largura"]
+                old_comprimento = dados.loc[index, "comprimento"]
+                old_area = dados.loc[index, "area"]
+                old_area_plantio = dados.loc[index, "area_plantio"]
+                old_fileiras = dados.loc[index, "fileiras"]
+                old_plantas_por_fileira = dados.loc[index, "plantas_por_fileira"]
+                old_total_plantas = dados.loc[index, "total_plantas"]
+                old_insumo_total = dados.loc[index, "insumo_total"]
+                old_tempo_plantio = dados.loc[index, "tempo_plantio"]
+                old_espacamento_fileira_cm = dados.loc[index, "espacamento_fileira_cm"]
+                old_espacamento_planta_cm = dados.loc[index, "espacamento_planta_cm"]
+                old_insumo_nome = dados.loc[index, "insumo_nome"]
+
+                cultura = dados.loc[index, "cultura"]
+
+                # Solicitar novos valores
+                nova_largura = obter_numero("Digite a nova largura do campo em metros: ")
+                novo_comprimento = obter_numero("Digite o novo comprimento do campo em metros: ")
+
+                # Obter parâmetros padrão com base na cultura
+                parametros = obter_parametros_cultura(cultura)
+                if parametros is None:
+                    continue  # Se a cultura não for suportada, retorna ao menu
+
+                espacamento_fileira_cm = parametros["espacamento_fileira_cm"]
+                espacamento_planta_cm = parametros["espacamento_planta_cm"]
+                largura_da_fileira_cm = parametros["largura_da_fileira_cm"]
+                comprimento_da_planta_cm = parametros["comprimento_da_planta_cm"]
+                necessidade_hidrica = parametros["necessidade_hidrica"]
+
+                # Converter centímetros para metros
+                espacamento_fileira_m = espacamento_fileira_cm / 100
+                espacamento_planta_m = espacamento_planta_cm / 100
+                largura_da_fileira_m = largura_da_fileira_cm / 100
+                comprimento_da_planta_m = comprimento_da_planta_cm / 100
+
+                # Calcular novos valores derivados
+                nova_area = calcular_area(nova_largura, novo_comprimento)
+
+                novas_fileiras = calcular_fileiras(nova_largura, espacamento_fileira_m, largura_da_fileira_m)
+                novas_plantas_por_fileira = calcular_plantas_por_fileira(novo_comprimento, espacamento_planta_m, comprimento_da_planta_m)
+                novo_total_plantas = novas_fileiras * novas_plantas_por_fileira
+
+                nova_area_plantio = calcular_area_plantio(
+                    novas_fileiras,
+                    novas_plantas_por_fileira,
+                    largura_da_fileira_m,
+                    comprimento_da_planta_m,
+                    espacamento_fileira_m,
+                    espacamento_planta_m
+                )
+
+                novo_insumo_nome, novo_insumo_total = calcular_insumos(nova_area_plantio, cultura)
+                novo_tempo_plantio = calcular_tempo(cultura)
+
+                # Gerar dados de sensores
+                umidade_solo, temperatura = gerar_dados_sensores()
+
+                # Calcular necessidade de irrigação
+                necessidade_irrigacao = calcular_necessidade_irrigacao(umidade_solo, necessidade_hidrica)
+
+                # Nível de investimento permanece o mesmo
+                nivel_investimento = dados.loc[index, "nivel_investimento"]
+
+                # Definir número de tecnologias
+                num_tecnologias = definir_num_tecnologias(nivel_investimento)
+
+                # Calcular produtividade esperada
+                produtividade_esperada = calcular_produtividade_esperada(cultura, nivel_investimento, nova_area_plantio)
+
+                # Cálculos adicionais
+                volume_agua = nova_area_plantio * 0.005  # Volume de água necessário (m³)
+                preco_por_m3 = 2.5  # Preço por m³ de água
+                vazao_sistema = 10  # Vazão do sistema de irrigação (m³/h)
+                cobertura_por_posto = 200  # Área coberta por cada posto de irrigação (m²)
+
+                custo_agua = calcular_custo_agua(volume_agua, preco_por_m3)
+                tempo_irrigacao = calcular_tempo_irrigacao(volume_agua, vazao_sistema)
+                numero_postes = calcular_numero_postes(nova_area_plantio, cobertura_por_posto)
+
+                # Exibir comparação dos valores
+                print("\nComparação dos valores:")
+                print(f"Largura: {old_largura} metros   -->   Largura: {nova_largura} metros")
+                print(f"Comprimento: {old_comprimento} metros   -->   Comprimento: {novo_comprimento} metros")
+                print(f"Área: {old_area} m²   -->   Área: {nova_area} m²")
+                print(f"Área de Plantio: {old_area_plantio} m²   -->   Área de Plantio: {nova_area_plantio} m²")
+                print(f"Fileiras: {old_fileiras}   -->   Fileiras: {novas_fileiras}")
+                print(f"Plantas por Fileira: {old_plantas_por_fileira}   -->   Plantas por Fileira: {novas_plantas_por_fileira}")
+                print(f"Total de Plantas: {old_total_plantas}   -->   Total de Plantas: {novo_total_plantas}")
+                print(f"Insumo Total: {old_insumo_total} unidades   -->   Insumo Total: {novo_insumo_total} unidades")
+                print(f"Tempo de Plantio: {old_tempo_plantio} dias   -->   Tempo de Plantio: {novo_tempo_plantio} dias")
+                print(f"Espaçamento entre Fileiras: {old_espacamento_fileira_cm} cm   -->   Espaçamento entre Fileiras: {espacamento_fileira_cm} cm")
+                print(f"Espaçamento entre Plantas: {old_espacamento_planta_cm} cm   -->   Espaçamento entre Plantas: {espacamento_planta_cm} cm")
+                print(f"Insumo Utilizado: {old_insumo_nome}   -->   Insumo Utilizado: {novo_insumo_nome}")
+                print(f"Necessidade de Irrigação: {dados.loc[index, 'necessidade_irrigacao']}   -->   Necessidade de Irrigação: {necessidade_irrigacao}")
+                print(f"Produtividade Esperada: {dados.loc[index, 'produtividade_esperada']:.2f} kg   -->   Produtividade Esperada: {produtividade_esperada:.2f} kg")
+                print(f"Custo de Água: R$ {dados.loc[index, 'custo_agua']:.2f}   -->   Custo de Água: R$ {custo_agua:.2f}")
+                print(f"Tempo de Irrigação: {dados.loc[index, 'tempo_irrigacao']:.2f} horas   -->   Tempo de Irrigação: {tempo_irrigacao:.2f} horas")
+                print(f"Número de Postes de Irrigação: {dados.loc[index, 'numero_postes']}   -->   Número de Postes de Irrigação: {numero_postes}")
+
+                # Solicitar confirmação
+                confirmacao = input("Tem certeza que deseja aplicar as alterações? (s/n): ").strip().lower()
+                if confirmacao == 's':
+                    # Aplicar as alterações
+                    dados.loc[index, "largura"] = nova_largura
+                    dados.loc[index, "comprimento"] = novo_comprimento
+                    dados.loc[index, "area"] = nova_area
+                    dados.loc[index, "area_plantio"] = nova_area_plantio
+                    dados.loc[index, "fileiras"] = novas_fileiras
+                    dados.loc[index, "plantas_por_fileira"] = novas_plantas_por_fileira
+                    dados.loc[index, "total_plantas"] = novo_total_plantas
+                    dados.loc[index, "insumo_total"] = novo_insumo_total
+                    dados.loc[index, "tempo_plantio"] = novo_tempo_plantio
+                    dados.loc[index, "espacamento_fileira_cm"] = espacamento_fileira_cm
+                    dados.loc[index, "espacamento_planta_cm"] = espacamento_planta_cm
+                    dados.loc[index, "largura_da_fileira_cm"] = largura_da_fileira_cm
+                    dados.loc[index, "comprimento_da_planta_cm"] = comprimento_da_planta_cm
+                    dados.loc[index, "insumo_nome"] = novo_insumo_nome
+                    dados.loc[index, "umidade_solo"] = umidade_solo
+                    dados.loc[index, "temperatura"] = temperatura
+                    dados.loc[index, "necessidade_irrigacao"] = necessidade_irrigacao
+                    dados.loc[index, "num_tecnologias"] = num_tecnologias
+                    dados.loc[index, "produtividade_esperada"] = produtividade_esperada
+                    dados.loc[index, "custo_agua"] = custo_agua
+                    dados.loc[index, "tempo_irrigacao"] = tempo_irrigacao
+                    dados.loc[index, "numero_postes"] = numero_postes
+
+                    # Salvando dados após a atualização
+                    dados.to_csv('dados.csv', sep=',', index=False)
+
+                    print("Dados atualizados com sucesso.")
+                    voltar_menu()
+                else:
+                    print("Operação cancelada. Nenhum dado foi alterado.")
+                    voltar_menu()
+            else:
+                print("Índice inválido.")
+                voltar_menu()
+
+        elif opcao == 4:
+            # Deletar dados
+            if dados.empty:
+                print("Nenhum dado disponível para deletar.")
+                voltar_menu()
+                continue
+
+            print(f'Selecione entre 1 e {len(dados)}')
+            index = obter_inteiro("Digite o número da cultura que deseja deletar: ") - 1
+            if 0 <= index < len(dados):
+                # Mostrando o registro que será deletado
+                print(f"\nVocê selecionou o registro {dados.loc[index, 'id']}:\n")
+                for coluna in dados.columns[1:]:
+                    print(f"  {coluna.replace('_', ' ').title()}: {dados.loc[index, coluna]}")
+
+                # Solicita confirmação do usuário
+                confirmacao = input(f"Tem certeza que deseja deletar o registro {dados.loc[index, 'id']}? (s/n): ").strip().lower()
+                if confirmacao == 's':
+                    dados = dados.drop(index).reset_index(drop=True)
+                    # Atualizar IDs após remoção
+                    dados['id'] = range(1, len(dados) + 1)
+                    # Salvando dados após a exclusão
+                    dados.to_csv('dados.csv', sep=',', index=False)
+                    print("Cultura deletada com sucesso.")
+                    voltar_menu()
+                else:
+                    print("Operação cancelada. Nenhum dado foi deletado.")
+                    voltar_menu()
+            else:
+                print("Índice inválido.")
+                voltar_menu()
+
+        elif opcao == 5:
+            # Opção 5 - Estatísticas
+            try:
+                estatisticas = pd.read_csv('estatisticas.csv', sep=',')
+                print("\nEstatísticas das Culturas:\n")
+                print(tabulate(estatisticas, headers='keys', tablefmt='grid'))
+            except FileNotFoundError:
+                print("Arquivo 'estatisticas.csv' não encontrado na pasta raiz do projeto.")
+            except Exception as e:
+                print(f"Ocorreu um erro ao ler o arquivo 'estatisticas.csv': {e}")
+            finally:
+                voltar_menu()
+
+        elif opcao == 6:
+            # Opção 6 - Clima
+            try:
+                clima = pd.read_csv('clima.csv', sep=',')
+                print("\nDados Climáticos:\n")
+                print(tabulate(clima, headers='keys', tablefmt='grid'))
+            except FileNotFoundError:
+                print("Arquivo 'clima.csv' não encontrado na pasta raiz do projeto.")
+            except Exception as e:
+                print(f"Ocorreu um erro ao ler o arquivo 'clima.csv': {e}")
+            finally:
+                voltar_menu()
+
+        elif opcao == 7:
+            # Opção 7 - Gerar script R
+            def gerar_script_r():
+                seu_nome = input("Digite seu nome completo: ")
+                seu_rm = input("Digite seu RM: ")
+                script = f"""
+                # {seu_nome}_RM{seu_rm}_fase2_cap9
+
+                # Importando os dados
+                dados <- read.csv('dados.csv', header = TRUE, sep = ',')
+
+                # Análise da Produtividade Esperada
+                produtividade <- dados$produtividade_esperada
+
+                # Medidas de Tendência Central
+                media <- mean(produtividade)
+                mediana <- median(produtividade)
+
+                # Medidas de Dispersão
+                desvio_padrao <- sd(produtividade)
+                variancia <- var(produtividade)
+
+                # Medidas Separatrizes
+                quartis <- quantile(produtividade)
+
+                # Exibindo as medidas
+                print(paste("Média:", media))
+                print(paste("Mediana:", mediana))
+                print(paste("Desvio Padrão:", desvio_padrao))
+                print(paste("Variância:", variancia))
+                print("Quartis:")
+                print(quartis)
+
+                # Análise Gráfica
+                png('histograma_produtividade.png')
+                hist(produtividade, main = 'Histograma da Produtividade Esperada',
+                     xlab = 'Produtividade (kg/ha)', ylab = 'Frequência', col = 'blue')
+                dev.off()
+
+                png('boxplot_produtividade.png')
+                boxplot(produtividade, main = 'Boxplot da Produtividade Esperada',
+                        ylab = 'Produtividade (kg/ha)', col = 'green')
+                dev.off()
+
+                # Análise da Variável Qualitativa
+                cultura <- dados$cultura
+                tabela_culturas <- table(cultura)
+                png('barras_culturas.png')
+                barplot(tabela_culturas, main = 'Distribuição das Culturas',
+                        xlab = 'Cultura', ylab = 'Frequência', col = 'orange')
+                dev.off()
+                """
+                with open('analise_estatistica.R', 'w') as file:
+                    file.write(script)
+                print("Script R 'analise_estatistica.R' gerado com sucesso.")
+            gerar_script_r()
+            voltar_menu()
+
+        elif opcao == 8:
+            # Salva as alterações no arquivo CSV antes de sair
+            dados.to_csv('dados.csv', sep=',', index=False)
+            print("\nSaindo do programa...")
+            break
+
+# Executando o menu
+menu()
